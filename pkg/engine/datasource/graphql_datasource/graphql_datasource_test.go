@@ -679,8 +679,8 @@ func TestGraphQLDataSource(t *testing.T) {
 			Response: &resolve.GraphQLResponse{
 				Data: &resolve.Object{
 					Fetch: &resolve.ParallelFetch{
-						Fetches: []*resolve.SingleFetch{
-							{
+						Fetches: []resolve.Fetch{
+							&resolve.SingleFetch{
 								BufferId:   0,
 								Input:      `{"method":"POST","url":"https://service.one","body":{"query":"query($firstArg: String, $thirdArg: Int){serviceOne(serviceOneArg: $firstArg){fieldOne} anotherServiceOne(anotherServiceOneArg: $thirdArg){fieldOne} reusingServiceOne(reusingServiceOneArg: $firstArg){fieldOne}}","variables":{"thirdArg":$$1$$,"firstArg":"$$0$$"}}}`,
 								DataSource: &Source{},
@@ -693,7 +693,7 @@ func TestGraphQLDataSource(t *testing.T) {
 									},
 								),
 							},
-							{
+							&resolve.SingleFetch{
 								BufferId:   2,
 								Input:      `{"method":"POST","url":"https://service.two","body":{"query":"query($secondArg: Boolean, $fourthArg: Float){serviceTwo(serviceTwoArg: $secondArg){fieldTwo serviceOneField} secondServiceTwo(secondServiceTwoArg: $fourthArg){fieldTwo serviceOneField}}","variables":{"fourthArg":$$1$$,"secondArg":$$0$$}}}`,
 								DataSource: &Source{},
@@ -1515,7 +1515,8 @@ func TestGraphQLDataSource(t *testing.T) {
 		},
 	}))
 
-	federationFactory := &Factory{}
+	batchFactory := NewBatchFactory()
+	federationFactory := &Factory{BatchFactory: batchFactory}
 	t.Run("federation", RunTest(federationTestSchema,
 		`	query MyReviews {
 						me {
@@ -1556,15 +1557,18 @@ func TestGraphQLDataSource(t *testing.T) {
 							BufferID:  0,
 							Name:      []byte("me"),
 							Value: &resolve.Object{
-								Fetch: &resolve.SingleFetch{
-									BufferId: 1,
-									Input:    `{"method":"POST","url":"http://review.service","body":{"query":"query($representations: [_Any!]!){_entities(representations: $representations){... on User {reviews {body author {id username} product {upc}}}}}","variables":{"representations":[{"id":"$$0$$","__typename":"User"}]}},"extract_entities":true}`,
-									Variables: resolve.NewVariables(
-										&resolve.ObjectVariable{
-											Path: []string{"id"},
-										},
-									),
-									DataSource: &Source{},
+								Fetch: &resolve.BatchFetch{
+									Fetch: &resolve.SingleFetch{
+										BufferId: 1,
+										Input:    `{"method":"POST","url":"http://review.service","body":{"query":"query($representations: [_Any!]!){_entities(representations: $representations){... on User {reviews {body author {id username} product {upc}}}}}","variables":{"representations":[{"id":"$$0$$","__typename":"User"}]}},"extract_entities":true}`,
+										Variables: resolve.NewVariables(
+											&resolve.ObjectVariable{
+												Path: []string{"id"},
+											},
+										),
+										DataSource: &Source{},
+									},
+									BatchFactory: batchFactory,
 								},
 								Path:     []string{"me"},
 								Nullable: true,
@@ -1622,26 +1626,32 @@ func TestGraphQLDataSource(t *testing.T) {
 														Value: &resolve.Object{
 															Path: []string{"product"},
 															Fetch: &resolve.ParallelFetch{
-																Fetches: []*resolve.SingleFetch{
-																	{
-																		BufferId:   2,
-																		Input:      `{"method":"POST","url":"http://product.service","body":{"query":"query($representations: [_Any!]!){_entities(representations: $representations){... on Product {name price}}}","variables":{"representations":[{"upc":"$$0$$","__typename":"Product"}]}},"extract_entities":true}`,
-																		DataSource: &Source{},
-																		Variables: resolve.NewVariables(
-																			&resolve.ObjectVariable{
-																				Path: []string{"upc"},
-																			},
-																		),
+																Fetches: []resolve.Fetch{
+																	&resolve.BatchFetch{
+																		Fetch: &resolve.SingleFetch{
+																			BufferId:   2,
+																			Input:      `{"method":"POST","url":"http://product.service","body":{"query":"query($representations: [_Any!]!){_entities(representations: $representations){... on Product {name price}}}","variables":{"representations":[{"upc":"$$0$$","__typename":"Product"}]}},"extract_entities":true}`,
+																			DataSource: &Source{},
+																			Variables: resolve.NewVariables(
+																				&resolve.ObjectVariable{
+																					Path: []string{"upc"},
+																				},
+																			),
+																		},
+																		BatchFactory: batchFactory,
 																	},
-																	{
-																		BufferId: 3,
-																		Input:    `{"method":"POST","url":"http://review.service","body":{"query":"query($representations: [_Any!]!){_entities(representations: $representations){... on Product {reviews {body author {id username}}}}}","variables":{"representations":[{"upc":"$$0$$","__typename":"Product"}]}},"extract_entities":true}`,
-																		Variables: resolve.NewVariables(
-																			&resolve.ObjectVariable{
-																				Path: []string{"upc"},
-																			},
-																		),
-																		DataSource: &Source{},
+																	&resolve.BatchFetch{
+																		Fetch: &resolve.SingleFetch{
+																			BufferId: 3,
+																			Input:    `{"method":"POST","url":"http://review.service","body":{"query":"query($representations: [_Any!]!){_entities(representations: $representations){... on Product {reviews {body author {id username}}}}}","variables":{"representations":[{"upc":"$$0$$","__typename":"Product"}]}},"extract_entities":true}`,
+																			Variables: resolve.NewVariables(
+																				&resolve.ObjectVariable{
+																					Path: []string{"upc"},
+																				},
+																			),
+																			DataSource: &Source{},
+																		},
+																		BatchFactory: batchFactory,
 																	},
 																},
 															},
